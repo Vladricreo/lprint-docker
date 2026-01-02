@@ -47,11 +47,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libusb-1.0-0 \
     libpng16-16 \
     zlib1g \
+    libssl3 \
     ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-VOLUME ["/var/lib/lprint"]
+# <-- QUESTO è IL PEZZO CHE MANCAVA:
+# Copia i binari e le librerie installate nello stage build
+COPY --from=build /usr /usr
 
+VOLUME ["/var/lib/lprint"]
 EXPOSE 8631
 
 ENV TZ=Europe/Rome
