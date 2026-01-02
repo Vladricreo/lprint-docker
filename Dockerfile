@@ -1,10 +1,11 @@
 # =========================
 # BUILD STAGE
 # =========================
-FROM debian:trixie AS build
+FROM debian:bookworm AS build
 
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive
 
+# Toolchain + deps per build (CUPS dev è 2.4.x su bookworm)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     git \
@@ -22,17 +23,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
  && rm -rf /var/lib/apt/lists/*
 
-# Build PAPPL (dependency of LPrint)
-RUN git clone --depth 1 https://github.com/michaelrsweet/pappl.git /src/pappl \
+# ---- PAPPL: pin a versione compatibile con CUPS 2.4.x ----
+# Se questo tag non esiste nel tuo build, vedi nota sotto per cambiare tag.
+ARG PAPPL_REF=v1.3.1
+RUN git clone https://github.com/michaelrsweet/pappl.git /src/pappl \
  && cd /src/pappl \
- && ./configure --prefix=/usr --with-dnssd=avahi \
+ && git checkout "${PAPPL_REF}" \
+ && ./configure --prefix=/usr \
  && make -j"$(nproc)" \
  && make install
 
-# Build LPrint
-RUN git clone --depth 1 https://github.com/michaelrsweet/lprint.git /src/lprint \
+# ---- LPrint: pin a versione stabile (anche qui puoi cambiare se serve) ----
+ARG LPRINT_REF=v1.3.1
+RUN git clone https://github.com/michaelrsweet/lprint.git /src/lprint \
  && cd /src/lprint \
- && ./configure --prefix=/usr --with-dnssd=avahi \
+ && git checkout "${LPRINT_REF}" \
+ && ./configure --prefix=/usr \
  && make -j"$(nproc)" \
  && make install
 
@@ -40,12 +46,10 @@ RUN git clone --depth 1 https://github.com/michaelrsweet/lprint.git /src/lprint 
 # =========================
 # RUNTIME STAGE
 # =========================
-FROM debian:trixie-slim
+FROM debian:bookworm-slim
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=Europe/Rome
+ARG DEBIAN_FRONTEND=noninteractive
 
-# Runtime libs + tzdata (so TZ is applied)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libcups2 \
     libavahi-client3 \
@@ -54,16 +58,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpng16-16 \
     zlib1g \
     ca-certificates \
-    tzdata \
  && rm -rf /var/lib/apt/lists/*
 
-# Copy the built binaries/libraries from build stage
+# Copia i binari/librerie installati nello stage build
 COPY --from=build /usr /usr
 
-# Persist LPrint state/config
+# Stato/config persistenti
 VOLUME ["/var/lib/lprint"]
 
+# Web UI + IPP
 EXPOSE 8631
 
-# Start LPrint server on port 8631
-CMD ["lprint", "server", "-o", "server-port=8631"]
+ENV TZ=Europe/Rome
+
+# Avvio server LPrint
+CMD ["sh", "-lc", "lprint server -o server-port=8631 -o server-name=lprint"]
